@@ -2,10 +2,9 @@
   become: true
 
   tasks:
-    - name: Ensure Docker is installed
-      ansible.builtin.package:
-        name: docker.io
-        state: present
+    - name: Verify Docker is available
+      ansible.builtin.command: docker --version
+      changed_when: false
 
     - name: Ensure Docker service is running
       ansible.builtin.service:
@@ -14,20 +13,20 @@
         enabled: true
 
     - name: Pull application image
-      community.docker.docker_image:
-        name: "{{ image }}"
-        source: pull
+      ansible.builtin.command: docker pull ttl.sh/myapp:2h
 
-    - name: Remove old container
-      community.docker.docker_container:
-        name: myapp
-        state: absent
+    - name: Stop old container if running
+      ansible.builtin.command: docker stop myapp
+      ignore_errors: true
+
+    - name: Remove old container if exists
+      ansible.builtin.command: docker rm myapp
       ignore_errors: true
 
     - name: Run application container
-      community.docker.docker_container:
-        name: myapp
-        image: "{{ image }}"
-        restart_policy: always
-        ports:
-          - "4444:4444"
+      ansible.builtin.command: >
+        docker run -d
+        --name myapp
+        --restart always
+        -p 4444:4444
+        ttl.sh/myapp:2h
