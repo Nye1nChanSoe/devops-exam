@@ -2,9 +2,11 @@ pipeline {
     agent any
 
     environment {
-        // with build number
         IMAGE_NAME = "ttl.sh/myapp-${env.BUILD_NUMBER}"
         IMAGE_TTL  = "2h"
+
+        KUBE_SERVER = "https://kubernetes:6443"
+        KUBE_TOKEN  = "kubernetes-secret"
     }
 
     stages {
@@ -32,18 +34,21 @@ pipeline {
             }
         }
 
-        stage("Deploy") {
+        stage("Deploy to Kubernetes") {
             steps {
-                sshagent(credentials: ['secret-key']) {
+                withKubeConfig(
+                    credentialsId: env.KUBE_TOKEN,
+                    serverUrl: env.KUBE_SERVER
+                ) {
                     sh '''
-                        mkdir -p ~/.ssh
-                        chmod 700 ~/.ssh
-                        ssh-keyscan -H docker >> ~/.ssh/known_hosts
+                        kubectl delete pod myapp --ignore-not-found
 
-                        ansible-playbook \
-                          --inventory hosts.ini \
-                          --extra-vars "image=$IMAGE_NAME:$IMAGE_TTL" \
-                          playbook.yml
+                        sed "s|image:.*|image: $IMAGE_NAME:$IMAGE_TTL|g" k8s/myapp.yml \
+                          | kubectl apply -f -
+
+                        kubectl wait --for=condition=Ready pod/myapp --timeout=120s
+
+                        kubectl get pod myapp
                     '''
                 }
             }
