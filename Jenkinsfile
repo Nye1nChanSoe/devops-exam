@@ -1,13 +1,22 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'docker:27-cli'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
-    tools {
-        nodejs "node-24"
+    environment {
+        IMAGE_NAME = "ttl.sh/myapp-${env.BUILD_NUMBER}"
+        IMAGE_TTL  = "2h"
     }
 
     stages {
 
         stage("Test") {
+            agent {
+                docker { image 'node:24-alpine' }
+            }
             steps {
                 sh '''
                     node -v
@@ -17,28 +26,28 @@ pipeline {
             }
         }
 
-        stage("Build") {
+        stage("Build & Push Image") {
             steps {
                 sh '''
-                    echo "Distribution built..."
-                    rm -rf dist
-                    mkdir dist
-                    cp -r index.js package.json package-lock.json dist/
+                    docker build -t $IMAGE_NAME:$IMAGE_TTL .
+                    docker push $IMAGE_NAME:$IMAGE_TTL
                 '''
             }
         }
 
-        stage("Deploy with Ansible") {
+        stage("Deploy") {
             steps {
                 sshagent(credentials: ['secret-key']) {
                     sh '''
+                        apk add --no-cache ansible openssh-client
                         mkdir -p ~/.ssh
                         chmod 700 ~/.ssh
+                        ssh-keyscan -H docker >> ~/.ssh/known_hosts
 
-                        ssh-keyscan -H target >> ~/.ssh/known_hosts
-                        chmod 600 ~/.ssh/known_hosts
-
-                        ansible-playbook --inventory hosts.ini playbook.yml
+                        ansible-playbook \
+                          --inventory hosts.ini \
+                          --extra-vars "image=$IMAGE_NAME:$IMAGE_TTL" \
+                          playbook.yml
                     '''
                 }
             }

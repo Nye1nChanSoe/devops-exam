@@ -1,38 +1,33 @@
 - hosts: all
-  vars:
-    app_dir: /home/laborant/app
+  become: true
 
   tasks:
-    - name: Create app directory
-      file:
-        path: "{{ app_dir }}"
-        state: directory
-        owner: laborant
-        group: laborant
-        mode: "0755"
+    - name: Ensure Docker is installed
+      ansible.builtin.package:
+        name: docker.io
+        state: present
 
-    - name: Copy application files
-      copy:
-        src: dist/
-        dest: "{{ app_dir }}"
-        owner: laborant
-        group: laborant
-
-    - name: Install production dependencies
-      command: npm ci --omit=dev
-      args:
-        chdir: "{{ app_dir }}"
-
-    - name: Create systemd service
-      become: true
-      copy:
-        src: node-app.service
-        dest: /etc/systemd/system/node-app.service
-
-    - name: Start the service
-      become: true
-      ansible.builtin.systemd:
-        name: node-app.service
-        daemon_reload: true
-        state: restarted
+    - name: Ensure Docker service is running
+      ansible.builtin.service:
+        name: docker
+        state: started
         enabled: true
+
+    - name: Pull application image
+      community.docker.docker_image:
+        name: "{{ image }}"
+        source: pull
+
+    - name: Remove old container
+      community.docker.docker_container:
+        name: myapp
+        state: absent
+      ignore_errors: true
+
+    - name: Run application container
+      community.docker.docker_container:
+        name: myapp
+        image: "{{ image }}"
+        restart_policy: always
+        ports:
+          - "4444:4444"
