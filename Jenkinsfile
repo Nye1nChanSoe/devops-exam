@@ -1,25 +1,22 @@
 pipeline {
-    agent {
-        docker {
-            image 'docker:27-cli'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
+        // with build number
         IMAGE_NAME = "ttl.sh/myapp-${env.BUILD_NUMBER}"
         IMAGE_TTL  = "2h"
     }
 
     stages {
-
         stage("Test") {
             agent {
-                docker { image 'node:24-alpine' }
+                docker {
+                    image 'node:24-alpine'
+                    args '-u root'
+                }
             }
             steps {
                 sh '''
-                    node -v
                     npm ci
                     node --test
                 '''
@@ -39,7 +36,6 @@ pipeline {
             steps {
                 sshagent(credentials: ['secret-key']) {
                     sh '''
-                        apk add --no-cache ansible openssh-client
                         mkdir -p ~/.ssh
                         chmod 700 ~/.ssh
                         ssh-keyscan -H docker >> ~/.ssh/known_hosts
